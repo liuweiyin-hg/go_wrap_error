@@ -1,5 +1,16 @@
-# GORM
+# Readme
 
-This example is pull by [#1275 PR](https://github.com/kataras/iris/pull/1275) by [@wuxiaoxiaoshen](https://github.com/wuxiaoxiaoshen).
+## core 目录
+初始化 iris application
+初始化 database
 
-A more complete and real-world example can be found at the <https://github.com/snowlyg/IrisApiProject> project created by [@snowlyg](https://github.com/snowlyg).
+## user_app 目录
+创建和查询 user
+请求先进入 service.go
+然后进入 dao.go 查数据库
+
+## main
+两个路径配到 main.go 里面
+在这个请求里边 /get_user/{id:uint}, 试验了两个函数 errors.As 和 errors.Is, 用于判断自定义 error
+
+[image]

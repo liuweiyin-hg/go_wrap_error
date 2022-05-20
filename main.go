@@ -1,82 +1,46 @@
 package main
 
 import (
+	"fmt"
+	app "mydb/core/application"
+	"mydb/core/database"
+	"mydb/user_app"
 	"net/http"
-	"os"
-	"time"
 
-	"github.com/jinzhu/gorm"
+	"github.com/pkg/errors"
+
 	"github.com/kataras/iris/v12"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type User struct {
-	gorm.Model
-	Salt      string `gorm:"type:varchar(255)" json:"salt"`
-	Username  string `gorm:"type:varchar(32)" json:"username"`
-	Password  string `gorm:"type:varchar(200);column:password" json:"-"`
-	Languages string `gorm:"type:varchar(200);column:languages" json:"languages"`
-}
-
-func (u User) TableName() string {
-	return "gorm_user"
-}
-
-type UserSerializer struct {
-	ID        uint      `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Salt      string    `json:"salt"`
-	UserName  string    `json:"user_name"`
-	Password  string    `json:"-"`
-	Languages string    `json:"languages"`
-}
-
-func (self User) Serializer() UserSerializer {
-	return UserSerializer{
-		ID:        self.ID,
-		CreatedAt: self.CreatedAt.Truncate(time.Second),
-		UpdatedAt: self.UpdatedAt.Truncate(time.Second),
-		Salt:      self.Salt,
-		Password:  self.Password,
-		Languages: self.Languages,
-		UserName:  self.Username,
-	}
-}
-
 func main() {
-	app := iris.Default()
-	db, err := gorm.Open("sqlite3", "test.db")
-	db.LogMode(true) // show SQL logger
-	if err != nil {
-		app.Logger().Fatalf("connect to sqlite3 failed")
-		return
-	}
-	iris.RegisterOnInterrupt(func() {
-		defer db.Close()
-	})
+	app.InitApplication()
+	database.InitDb()
 
-	if os.Getenv("ENV") != "" {
-		db.DropTableIfExists(&User{}) // drop table
-	}
-	db.AutoMigrate(&User{}) // create table: // AutoMigrate run auto migration for given models, will only add missing fields, won't delete/change current data
+	user_app.MigrateUser()
+
+	var app = app.GetApp()
 
 	app.Post("/post_user", func(ctx iris.Context) {
-		var user User
-		user = User{
-			Username:  "gorm",
-			Salt:      "hash---",
-			Password:  "admin",
-			Languages: "gorm",
-		}
-		if err := db.FirstOrCreate(&user); err == nil {
-			app.Logger().Fatalf("created one record failed: %s", err.Error)
-			ctx.JSON(iris.Map{
-				"code":  http.StatusBadRequest,
-				"error": err.Error,
-			})
+		var user user_app.User
+		if err := ctx.ReadJSON(&user); err != nil {
+			ctx.JSON(
+				iris.Map{
+					"code": http.StatusBadRequest,
+					"data": err.Error(),
+				})
 			return
 		}
+		user, err := user_app.PostUserService(user)
+		if err != nil {
+			ctx.JSON(
+				iris.Map{
+					"code": http.StatusBadRequest,
+					"data": fmt.Sprintf("%v", err),
+				})
+			return
+		}
+
 		ctx.JSON(
 			iris.Map{
 				"code": http.StatusOK,
@@ -85,82 +49,37 @@ func main() {
 	})
 
 	app.Get("/get_user/{id:uint}", func(ctx iris.Context) {
-		var user User
 		id, _ := ctx.Params().GetUint("id")
-		app.Logger().Println(id)
+		app.Logger().Printf("input user id %d", id)
 
-		if err := db.Where("id = ?", int(id)).First(&user).Error; err != nil {
-			app.Logger().Error(err)
-			ctx.JSON(iris.Map{
-				"code":  http.StatusBadRequest,
-				"error": err.Error(),
-			})
-			return
-		}
-		ctx.JSON(iris.Map{
-			"code": http.StatusOK,
-			"data": user.Serializer(),
-		})
-	})
+		user, err := user_app.GetUserService(id)
 
-	app.Delete("/delete_user/{id:uint}", func(ctx iris.Context) {
-		id, _ := ctx.Params().GetUint("id")
-		if id == 0 {
-			ctx.JSON(iris.Map{
-				"code":   http.StatusOK,
-				"detail": "query param id should not be nil",
-			})
-			return
-		}
-		var user User
-		if err := db.Where("id = ?", id).First(&user).Error; err != nil {
-			app.Logger().Fatalf("record not found")
-			ctx.JSON(iris.Map{
-				"code":   http.StatusOK,
-				"detail": err.Error,
-			})
-			return
-		}
-		db.Delete(&user)
-		ctx.JSON(iris.Map{
-			"code": http.StatusOK,
-			"data": user.Serializer(),
-		})
-	})
+		if err != nil {
+			output := ""
+			if errors.Is(err, user_app.GetUserError2) {
+				output += "Is get user error; "
+			}
 
-	app.Patch("/patch_user/{id:uint}", func(ctx iris.Context) {
-		id, _ := ctx.Params().GetUint("id")
-		if id == 0 {
+			if errors.Is(err, user_app.CreateUserError2) {
+				output += "Is create user error; "
+			}
+
+			if errors.As(err, &user_app.GetUserError{}) {
+				output += "As get user error;"
+			}
+
 			ctx.JSON(iris.Map{
-				"code":   http.StatusOK,
-				"detail": "query param id should not be nil",
-			})
-			return
-		}
-		var user User
-		tx := db.Begin()
-		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
-			app.Logger().Fatalf("record not found")
-			ctx.JSON(iris.Map{
-				"code":   http.StatusOK,
-				"detail": err.Error,
+				"code": http.StatusBadRequest,
+				// "long_error": fmt.Sprintf("%+v\n", err),
+				"error":      fmt.Errorf("%w", err).Error(),
+				"cause":      errors.Cause(err).Error(),
+				"output":     output,
+				"unwrap":     errors.Unwrap(err).Error(),
+				"with_stack": errors.WithStack(err).Error(),
 			})
 			return
 		}
 
-		var body patchParam
-		ctx.ReadJSON(&body)
-		app.Logger().Println(body)
-		if err := tx.Model(&user).Updates(map[string]interface{}{"username": body.Data.UserName, "password": body.Data.Password}).Error; err != nil {
-			app.Logger().Fatalf("update record failed")
-			tx.Rollback()
-			ctx.JSON(iris.Map{
-				"code":  http.StatusBadRequest,
-				"error": err.Error,
-			})
-			return
-		}
-		tx.Commit()
 		ctx.JSON(iris.Map{
 			"code": http.StatusOK,
 			"data": user.Serializer(),

@@ -6,6 +6,7 @@ require (
 	github.com/jinzhu/gorm v1.9.16
 	github.com/kataras/iris/v12 v12.1.8
 	github.com/mattn/go-sqlite3 v1.14.13
+	github.com/pkg/errors v0.9.1
 )
 
 require (
