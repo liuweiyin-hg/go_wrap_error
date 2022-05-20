@@ -13,4 +13,4 @@
 两个路径配到 main.go 里面<br>
 在这个请求里边 /get_user/{id:uint}, 试验了两个函数 errors.As 和 errors.Is, 用于判断自定义 error<br>
 <br>
-![image](https://github.com/liuweiyin-hg/go_wrap_error/blob/master/WX20220521-011546@2x.png)
+![image](https://github.com/liuweiyin-hg/go_wrap_error/blob/master/WX20220521-011546@2xb.png)
